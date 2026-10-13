@@ -1,16 +1,22 @@
-
 # main.py
 
 import csv
 import io
 import json
-import time
 import logging
+import sys
+import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Annotated
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+# Ensure local modules resolve whether started from repo root or backend/
+_BACKEND_DIR = Path(__file__).resolve().parent
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,8 +38,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables for this initial development version.
-    Base.metadata.create_all(bind=engine)
+    # Automatically create database tables on startup
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        logger.error("Database table initialization warning: %s", exc)
     yield
 
 
@@ -46,11 +55,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=settings.cors_origins,
+    allow_origin_regex=r"https://.*\.(vercel\.app|onrender\.com)",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -716,3 +725,12 @@ def generate_ai_insights(payload: ReportInsightsRequest, db: Session = Depends(g
         "report": report_text,
         "model": used_model,
     }
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+
+    port = int(os.environ.get("PORT", settings.port))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+
